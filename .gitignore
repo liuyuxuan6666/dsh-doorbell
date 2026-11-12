@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+
+# test and coverage output
+coverage/
+.nyc_output/
+test/tmp/
+tmp/
+
+# logs
+*.log
+npm-debug.log*
+
+# local config and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# packed packages
+*.tgz
+
+# editors and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# build and cache output
+dist/
+*.tsbuildinfo
+.cache/
