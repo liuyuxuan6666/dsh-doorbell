@@ -1,53 +1,71 @@
+<div align="center">
+
 # dsh-doorbell
 
-Outbound notifications for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH).
-It rings when a turn finishes, fails, or waits for a human decision — so you can
-leave the DSH tab and still know when the agent needs you.
+**Never miss the moment your agent needs you.**
 
-Host-only DSH bundle. No client UI, no inbound chat commands, no session writes.
+Outbound Feishu and DingTalk notifications for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — when a turn finishes, fails, or waits for your decision.
 
-**Status:** `0.2.0` — Feishu and DingTalk text notifications are implemented;
-interactive cards, retries and rate limiting are planned.
+[![CI](https://github.com/liuyuxuan6666/dsh-doorbell/actions/workflows/test.yml/badge.svg)](https://github.com/liuyuxuan6666/dsh-doorbell/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
+[![DSH](https://img.shields.io/badge/dsh-0.2.x-4B32C3)](package.json)
+[![Status](https://img.shields.io/badge/status-beta-orange)](#roadmap)
 
-## What it does
+[Quick start](#quick-start) · [Events](#events) · [Configuration](#configuration) · [Providers](#providers) · [Security](#security-and-privacy)
 
-| Situation | DSH event | Result |
-|---|---|---|
-| Turn completed | `agent/status` running → idle | message with session, workspace and duration |
-| Turn failed | `agent/error` | error message; the following completion is suppressed |
-| Tool waits for approval | `approval/request` | tool name + reason |
-| `ask_user_question` waits | `user-questions/request` | the first question |
+<a href="./README.zh-CN.md">简体中文</a>
 
-Approval and question listeners are observe-only waterfalls: they always call
-`next()`, so they never swallow the real answerer.
+</div>
 
-## Install
+---
 
-From npm (after publication):
+## Why dsh-doorbell?
 
-```bash
-dsh plugin --profile desktop add dsh-doorbell
+Long agent turns are the norm. You start a task, switch to another window, and
+come back to find the agent finished five minutes ago — or stuck on a question
+the whole time.
+
+`dsh-doorbell` is a **host-only** DSH bundle that watches the lifecycle events
+DSH already emits and pushes a short message to a chat group. No client UI, no
+inbound commands, no session writes.
+
+```text
+DSH · Turn complete
+Session: job-hunt / Tencent application
+Workspace: ~/code-dsh/job-hunt
+Duration: 3m 12s
 ```
 
-From GitHub:
+## Features
 
-```bash
-dsh plugin --profile desktop add github:liuyuxuan6666/dsh-doorbell
-```
+- **Four events, not just “done”.** Turn complete, turn failed, tool approval,
+  and `ask_user_question` waiting for an answer.
+- **Feishu and DingTalk native.** Correct text payloads and optional
+  HMAC-SHA256 signatures for both providers; no relay required.
+- **Session-aware.** The message says *which* session, workspace and turn
+  duration, so a phone notification is enough to decide what to do.
+- **Quiet when it should be.** Skip short turns, filter subagents, and set a
+  quiet-hours window; approval and question alerts still break through.
+- **Host-only and fail-safe.** No HTTP server, no tools, no session writes.
+  A broken webhook is logged and swallowed; it never breaks an agent turn.
 
-Without Git on the DSH host, install a packed tarball:
+## Quick start
 
-```bash
-npm pack
-dsh plugin --profile desktop add file:C:/path/to/dsh-doorbell-0.2.0.tgz
-```
+### 1. Create a bot
 
-Restart DSH after installing. Then set the webhook environment variables.
+**Feishu** — create a private group, add a **Custom Bot**, enable signature
+verification, copy the webhook and secret.
+[Official guide](https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot)
 
-## Environment variables
+**DingTalk** — create a private group, add a **Custom Bot (Webhook)**, choose
+**加签 (sign)**, copy the webhook and secret.
+[Security settings](https://open.dingtalk.com/document/robots/customize-robot-security-settings)
 
-The DSH host reads its own process environment. On Windows desktop, set **user
-environment variables** and fully restart DSH; a WSL `export` does not reach the
+### 2. Set the environment
+
+The DSH host reads its own process environment. On Windows desktop, set user
+environment variables and fully restart DSH; a WSL `export` does not reach the
 Windows process.
 
 ```powershell
@@ -55,35 +73,49 @@ Windows process.
 [Environment]::SetEnvironmentVariable('DSH_DOORBELL_SECRET','...','User')
 ```
 
-On Linux/macOS, export them before starting DSH:
+On Linux/macOS:
 
 ```bash
 export DSH_DOORBELL_WEBHOOK='https://...'
 export DSH_DOORBELL_SECRET='...'
 ```
 
-Never commit the webhook or secret. `webhookUrl` and `secret` config fields exist
-for local testing, but environment variables are the intended path.
+### 3. Install and restart
 
-## Feishu setup
+```bash
+dsh plugin --profile desktop add github:liuyuxuan6666/dsh-doorbell
+```
 
-1. Create a private Feishu group (only you) and add a **Custom Bot** to it.
-2. Enable **signature verification** and copy the signing secret.
-3. Copy the webhook URL: `https://open.feishu.cn/open-apis/bot/v2/hook/...`.
-4. Set `provider: feishu` and the two environment variables above.
+No Git on the DSH host? Pack and install a local tarball:
 
-Official guide: https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot
+```bash
+npm pack
+dsh plugin --profile desktop add file:C:/path/to/dsh-doorbell-0.2.0.tgz
+```
 
-## DingTalk setup
+Fully restart DSH after installing. Then run a turn longer than 10 seconds and
+ask the agent a question; the group should receive both notifications.
 
-1. Create a private DingTalk group and add a **Custom Bot (Webhook)**.
-2. Security setting: choose **加签 (sign)** and copy the secret. If you use a
-   keyword instead, set the keyword to `DSH` and leave the secret empty.
-3. Copy the webhook URL: `https://oapi.dingtalk.com/robot/send?access_token=...`.
-4. Set `provider: dingtalk` and the two environment variables above.
+## Events
 
-The plugin appends `timestamp` and `sign` to the DingTalk webhook URL; the
-timestamp is in milliseconds, as DingTalk requires.
+| Event | DSH seam | What you receive |
+|---|---|---|
+| Turn completed | `agent/status` running → idle | session, workspace, duration |
+| Turn failed | `agent/error` | error detail; the completion alert is suppressed |
+| Tool approval | `approval/request` | tool name and reason |
+| Answer needed | `user-questions/request` | the first question |
+
+`approval/request` and `user-questions/request` are waterfalls. The listener
+only observes and always delegates with `next()`; it never consumes the real
+answerer.
+
+## Providers
+
+| Provider | Payload | Signing |
+|---|---|---|
+| `feishu` | text message | optional HMAC-SHA256 (`timestamp` + `sign`) |
+| `dingtalk` | text message | optional 加签 (`timestamp` + URL-encoded `sign`) |
+| `generic` | JSON `{ text, title, kind, ts }` | none; useful for local relays |
 
 ## Configuration
 
@@ -123,44 +155,64 @@ timestamp is in milliseconds, as DingTalk requires.
 | `titlePrefix` | `DSH` | title prefix in the message |
 | `requestTimeoutMs` | `5000` | webhook request timeout |
 
-The `generic` provider posts:
+## How it works
 
-```json
-{ "text": "...", "title": "...", "kind": "complete", "ts": "..." }
+```text
+agent/status ─┐
+agent/error  ─┼─▶ index.js ─▶ events.js ─▶ format.js ─▶ notify.js ─▶ provider ─▶ chat
+approval/... ─┤                 normalize    render       resolve       Feishu
+user-questions┘                                            config       DingTalk
 ```
 
-That is useful for a local relay or another chat service.
+- `index.js` owns the DSH event subscriptions and config schema.
+- `lib/events.js` holds pure helpers: session identity, subagent detection,
+  quiet hours, duration formatting.
+- `lib/format.js` builds the compact text message.
+- `lib/notify.js` picks the provider, resolves env secrets and isolates errors.
+- `lib/providers/*` contains Feishu, DingTalk and generic adapters.
 
-## Providers
-
-- **Feishu**: text message, optional HMAC-SHA256 signature.
-- **DingTalk**: text message, optional `加签` signature appended to the URL.
-- **generic**: JSON `POST` with `text`, `title`, `kind` and `ts`.
+The plugin is deliberately **host-only**: no `dsh.client`, no UI, no inbound
+webhook. It reads no session logs.
 
 ## Security and privacy
 
-- Outbound only: the plugin registers no HTTP server and accepts no commands.
-- Only HTTPS webhooks are accepted, except loopback HTTP for local relays.
-- Secrets are read from env by default and are never logged.
-- Messages contain only the session label, workspace path, duration and a short
-  detail; no file contents or full assistant output.
-- A notification failure is logged and swallowed; it never breaks a turn.
+- Outbound only: no listening HTTP server, no command endpoint.
+- HTTPS required, except loopback HTTP for local relays and tests.
+- Secrets come from env by default and are never logged.
+- Messages contain only session label, workspace path, duration and a short
+  detail — no file contents or full assistant output.
+- A notification failure is logged and swallowed; the agent loop is unaffected.
 
 ## Compatibility
 
 - Node `>=20`.
 - DSH `>=0.2.0-rc.1 <0.3.0-0`; tested against `0.2.2-rc.1`.
 - Bundle patch: `cordis.patch.yml` inserts the `doorbell` row.
+- 42 tests, CI on Node 20 / 22 / 24.
 
 ## Development
 
 ```bash
 npm install
 npm test
+npm pack --dry-run
 ```
 
 Tests use Node's built-in runner and a fake `fetch`; no network or live webhook
 is required.
+
+## Roadmap
+
+- [x] Feishu text notifications
+- [x] DingTalk text notifications
+- [ ] Feishu / DingTalk interactive cards
+- [ ] Retry, rate limiting and notification coalescing
+- [ ] npm release and compatibility matrix
+
+## Contributing
+
+Issues and pull requests are welcome. Please keep the core host-only and
+provider-agnostic, and run `npm test` before opening a PR.
 
 ## License
 
