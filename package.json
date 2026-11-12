@@ -1,0 +1,63 @@
+{
+  "name": "dsh-doorbell",
+  "version": "0.1.0",
+  "description": "Outbound Feishu/DingTalk notifications for DeepSeek Harness: turn finished, error, approval, or question.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lyx6666",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liuyuxuan6666/dsh-doorbell.git"
+  },
+  "homepage": "https://github.com/liuyuxuan6666/dsh-doorbell#readme",
+  "bugs": {
+    "url": "https://github.com/liuyuxuan6666/dsh-doorbell/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "notifications",
+    "feishu",
+    "lark",
+    "dingtalk",
+    "webhook",
+    "approval",
+    "ask-user"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+  },
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "PLAN.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# Layer contributed when a profile lists this bundle.
+# Users can override any config value in their profile's cordis.patch.yml.
+- insert:
+    - id: doorbell
+      name: dsh-doorbell
