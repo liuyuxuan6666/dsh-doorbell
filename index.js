@@ -14,7 +14,7 @@ export const name = 'dsh-doorbell'
 
 export const Config = Schema.object({
   provider: Schema.string().default('feishu')
-    .description('Notification provider: feishu, generic (DingTalk adapter planned).'),
+    .description('Notification provider: feishu, dingtalk, generic.'),
   webhookUrl: Schema.string().default('')
     .description('Direct webhook URL. Prefer webhookEnv so the secret stays out of config.'),
   webhookEnv: Schema.string().default('DSH_DOORBELL_WEBHOOK')

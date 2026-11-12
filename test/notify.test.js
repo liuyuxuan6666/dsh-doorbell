@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createNotifier, isAllowedWebhook, resolveWebhook } from '../lib/notify.js'
+import { dingtalkSign } from '../lib/providers/dingtalk.js'
 
 const message = { kind: 'complete', title: 'DSH · 完成', text: 'DSH · 完成\n会话：repo' }
 
@@ -89,6 +90,34 @@ test('notifier supports the generic provider and swallows failures', async () =>
   const failed = await failing.notify(message)
   assert.equal(failed.ok, false)
   assert.match(failed.error, /network down/)
+})
+
+test('notifier sends DingTalk signed text', async () => {
+  let request
+  const notifier = createNotifier(
+    {
+      provider: 'dingtalk',
+      webhookUrl: 'https://oapi.dingtalk.com/robot/send?access_token=abc',
+      secret: 'secret',
+    },
+    {
+      env: {},
+      fetchImpl: async (url, init) => {
+        request = { url, init }
+        return { ok: true, status: 200, json: async () => ({ errcode: 0, errmsg: 'ok' }) }
+      },
+    },
+  )
+  assert.equal((await notifier.notify(message)).ok, true)
+  const url = new URL(request.url)
+  assert.equal(url.searchParams.get('access_token'), 'abc')
+  const timestamp = url.searchParams.get('timestamp')
+  assert.match(timestamp, /^\d{13}$/)
+  assert.equal(url.searchParams.get('sign'), dingtalkSign(timestamp, 'secret'))
+  assert.deepEqual(JSON.parse(request.init.body), {
+    msgtype: 'text',
+    text: { content: message.text },
+  })
 })
 
 test('notifier reports an unsupported provider without throwing', async () => {
