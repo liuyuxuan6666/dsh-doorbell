@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] - 2026-11-12
+
+### Added
+
+- DingTalk custom-robot provider with `加签` (HMAC-SHA256, millisecond
+  timestamp) and signed webhook URL.
+- Provider dispatch for `feishu`, `dingtalk` and `generic`.
+- DingTalk provider and dispatch tests.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

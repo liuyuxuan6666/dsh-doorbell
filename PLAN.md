@@ -13,8 +13,8 @@ Tell the user when attention is needed, without keeping the DSH tab open:
 - a tool call is waiting for approval;
 - `ask_user_question` is waiting for an answer.
 
-The first provider is Feishu (Lark) custom-bot webhook. DingTalk and a generic
-JSON webhook follow behind the same adapter boundary.
+Feishu (Lark) and DingTalk custom-bot webhooks are implemented behind the same
+adapter boundary; a generic JSON webhook backs local relays and tests.
 
 ## Non-goals
 
@@ -47,6 +47,7 @@ DSH events -> lib/events.js -> lib/format.js -> lib/notify.js -> provider adapte
   duration formatting.
 - `lib/format.js`: pure message rendering for the four event kinds.
 - `lib/providers/feishu.js`: Feishu payload and optional signature.
+- `lib/providers/dingtalk.js`: DingTalk payload, signature and signed URL.
 - `lib/providers/generic.js`: JSON webhook for local relays and tests.
 - `lib/notify.js`: provider selection, env-based secrets, timeout, error
   isolation.
@@ -79,10 +80,10 @@ be used for local testing, but the repository must never contain one.
 
 - `v0.1`: Feishu text notifications; four events; env config; min-duration and
   subagent filters; unit tests.
-- `v0.2`: Feishu interactive card; session title/workspace/summary; quiet hours;
-  rate limit and retry.
-- `v0.3`: DingTalk adapter; generic webhook documented.
-- `v1.0`: README, changelog, CI, compatibility matrix, npm release.
+- `v0.2`: DingTalk text provider with `加签`; provider dispatch; docs and
+  changelog.
+- `v0.3`: Feishu/DingTalk interactive cards; retry and rate limiting.
+- `v1.0`: compatibility matrix, live integration notes, npm release.
 
 ## Testing
 

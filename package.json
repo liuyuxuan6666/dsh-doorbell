@@ -1,6 +1,6 @@
 {
   "name": "dsh-doorbell",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Outbound Feishu/DingTalk notifications for DeepSeek Harness: turn finished, error, approval, or question.",
   "type": "module",
   "license": "MIT",

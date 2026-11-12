@@ -6,8 +6,8 @@ leave the DSH tab and still know when the agent needs you.
 
 Host-only DSH bundle. No client UI, no inbound chat commands, no session writes.
 
-**Status:** `0.1.0` — Feishu custom-bot text notifications are implemented;
-DingTalk and card rendering are planned.
+**Status:** `0.2.0` — Feishu and DingTalk text notifications are implemented;
+interactive cards, retries and rate limiting are planned.
 
 ## What it does
 
@@ -29,29 +29,61 @@ From npm (after publication):
 dsh plugin --profile desktop add dsh-doorbell
 ```
 
-From GitHub before the npm release:
+From GitHub:
 
 ```bash
 dsh plugin --profile desktop add github:liuyuxuan6666/dsh-doorbell
 ```
 
-Restart DSH after installing. Then set the webhook environment variables and
-add the config row described below.
+Without Git on the DSH host, install a packed tarball:
+
+```bash
+npm pack
+dsh plugin --profile desktop add file:C:/path/to/dsh-doorbell-0.2.0.tgz
+```
+
+Restart DSH after installing. Then set the webhook environment variables.
+
+## Environment variables
+
+The DSH host reads its own process environment. On Windows desktop, set **user
+environment variables** and fully restart DSH; a WSL `export` does not reach the
+Windows process.
+
+```powershell
+[Environment]::SetEnvironmentVariable('DSH_DOORBELL_WEBHOOK','https://...','User')
+[Environment]::SetEnvironmentVariable('DSH_DOORBELL_SECRET','...','User')
+```
+
+On Linux/macOS, export them before starting DSH:
+
+```bash
+export DSH_DOORBELL_WEBHOOK='https://...'
+export DSH_DOORBELL_SECRET='...'
+```
+
+Never commit the webhook or secret. `webhookUrl` and `secret` config fields exist
+for local testing, but environment variables are the intended path.
 
 ## Feishu setup
 
 1. Create a private Feishu group (only you) and add a **Custom Bot** to it.
-2. Copy the bot webhook URL.
-3. If you enable signature verification, copy the signing secret too.
-4. Put both in the environment of the process that runs DSH:
+2. Enable **signature verification** and copy the signing secret.
+3. Copy the webhook URL: `https://open.feishu.cn/open-apis/bot/v2/hook/...`.
+4. Set `provider: feishu` and the two environment variables above.
 
-```bash
-export DSH_DOORBELL_WEBHOOK='https://open.feishu.cn/open-apis/bot/v2/hook/...'
-export DSH_DOORBELL_SECRET='...'
-```
+Official guide: https://open.feishu.cn/document/client-docs/bot-v3/add-custom-bot
 
-Never commit the webhook or secret. `webhookUrl` and `secret` config fields
-exist for local testing, but environment variables are the intended path.
+## DingTalk setup
+
+1. Create a private DingTalk group and add a **Custom Bot (Webhook)**.
+2. Security setting: choose **加签 (sign)** and copy the secret. If you use a
+   keyword instead, set the keyword to `DSH` and leave the secret empty.
+3. Copy the webhook URL: `https://oapi.dingtalk.com/robot/send?access_token=...`.
+4. Set `provider: dingtalk` and the two environment variables above.
+
+The plugin appends `timestamp` and `sign` to the DingTalk webhook URL; the
+timestamp is in milliseconds, as DingTalk requires.
 
 ## Configuration
 
@@ -76,7 +108,7 @@ exist for local testing, but environment variables are the intended path.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `provider` | `feishu` | `feishu` or `generic`; DingTalk planned |
+| `provider` | `feishu` | `feishu`, `dingtalk` or `generic` |
 | `webhookUrl` | `""` | direct webhook override (prefer env) |
 | `webhookEnv` | `DSH_DOORBELL_WEBHOOK` | env var holding the webhook URL |
 | `secret` | `""` | direct signing secret override (prefer env) |
@@ -97,7 +129,13 @@ The `generic` provider posts:
 { "text": "...", "title": "...", "kind": "complete", "ts": "..." }
 ```
 
-That is useful for a local relay that speaks DingTalk or another service.
+That is useful for a local relay or another chat service.
+
+## Providers
+
+- **Feishu**: text message, optional HMAC-SHA256 signature.
+- **DingTalk**: text message, optional `加签` signature appended to the URL.
+- **generic**: JSON `POST` with `text`, `title`, `kind` and `ts`.
 
 ## Security and privacy
 
