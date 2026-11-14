@@ -8,6 +8,7 @@ import {
   shouldNotify,
 } from './lib/events.js'
 import { buildMessage } from './lib/format.js'
+import { buildSummary, textOf } from './lib/summary.js'
 import { createNotifier } from './lib/notify.js'
 
 export const name = 'dsh-doorbell'
@@ -93,6 +94,10 @@ export function apply(ctx, config = {}) {
   })
   const startedAt = new Map()
   const errored = new Set()
+  // Last assistant reply and first user request per session, used to build the
+  // one-line summary without another model call.
+  const lastReply = new Map()
+  const firstAsk = new Map()
 
   // Prefer the durable session id: DSH may hand a fresh agent object to a
   // later event, while the session identity stays stable.
@@ -101,17 +106,52 @@ export function apply(ctx, config = {}) {
     return id || agent
   }
 
+  /**
+   * Remember the conversation text a notification will summarize. Reading the
+   * committed session log keeps this exact: the model has already produced
+   * these words, so nothing is invented.
+   */
+  function remember(session, event) {
+    const id = String(session?.header?.id ?? session?.id ?? '')
+    if (!id) return
+    const type = event?.type
+    if (type === 'assistant/message') {
+      const text = textOf(event?.data ?? event)
+      if (text.trim()) lastReply.set(id, text)
+      return
+    }
+    if (type === 'user/message' && !firstAsk.has(id)) {
+      const source = event?.data?.source?.kind
+      if (typeof source === 'string' && source.startsWith('plugin')) return
+      const text = textOf(event?.data ?? event)
+      if (text.trim()) firstAsk.set(id, text)
+    }
+  }
+
+  ctx.on('session/event', (session, event) => {
+    try {
+      remember(session, event)
+    } catch {
+      /* never let bookkeeping break the session feed */
+    }
+  })
+
   function ring(kind, agent, detail, durationMs) {
     try {
       if (!settings[FLAGS[kind]]) return
       const session = sessionInfo(agent)
       const elapsedMs = Number.isFinite(durationMs) ? durationMs : 0
       if (!shouldNotify({ kind, session, elapsedMs, config: settings, now: new Date() })) return
+      const summary = buildSummary({
+        assistantText: lastReply.get(session.id),
+        userText: firstAsk.get(session.id),
+      })
       const message = buildMessage({
         kind,
         session,
         durationMs: kind === 'complete' ? elapsedMs : undefined,
         detail,
+        summary,
         prefix: settings.titlePrefix,
       })
       // Fire and forget: a slow webhook must never hold up the agent.
@@ -126,6 +166,8 @@ export function apply(ctx, config = {}) {
     const key = sessionKey(agent)
     if (status === 'running') {
       startedAt.set(key, Date.now())
+      const id = sessionInfo(agent).id
+      if (id) lastReply.delete(id)
       return
     }
     if (status !== 'idle') return
@@ -159,7 +201,13 @@ export function apply(ctx, config = {}) {
   })
 
   ctx.on('agent/disposed', ({ agent } = {}) => {
-    if (agent) startedAt.delete(sessionKey(agent))
+    if (!agent) return
+    startedAt.delete(sessionKey(agent))
+    const id = sessionInfo(agent).id
+    if (id) {
+      lastReply.delete(id)
+      firstAsk.delete(id)
+    }
   })
 
   return { notifier }

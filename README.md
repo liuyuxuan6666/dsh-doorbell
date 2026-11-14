@@ -100,10 +100,26 @@ ask the agent a question; the group should receive both notifications.
 
 | Event | DSH seam | What you receive |
 |---|---|---|
-| Turn completed | `agent/status` running → idle | session, workspace, duration |
+| Turn completed | `agent/status` running → idle | session, one-line summary, workspace, duration |
 | Turn failed | `agent/error` | error detail; the completion alert is suppressed |
 | Tool approval | `approval/request` | tool name and reason |
 | Answer needed | `user-questions/request` | the first question |
+
+### What the message looks like
+
+```text
+DSH · 完成
+会话：dsh-tally 设计
+摘要：面板已按宿主既有风格重排。
+工作区：/home/user/code-dsh/dsh-tally
+耗时：4m 12s
+```
+
+The summary is **extracted, not generated**: the listener keeps the last
+`assistant/message` of the turn from the committed `session/event` feed and
+takes its first sentence (code fences and inline code are stripped). No second
+model call, no added latency, nothing invented. Before the model has replied —
+an error, an approval, a question — the user's own request is used instead.
 
 `approval/request` and `user-questions/request` are waterfalls. The listener
 only observes and always delegates with `next()`; it never consumes the real

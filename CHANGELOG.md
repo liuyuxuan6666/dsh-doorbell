@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0] - 2026-11-14
+
+### Added
+
+- **Summary line in every notification.** The listener tracks the turn's last
+  `assistant/message` (and, before any reply, the user's request) from the
+  committed `session/event` feed and renders its first sentence as
+  `摘要：…`. Extractive only — no model call, no added latency.
+- Integration tests that drive the real listeners against a loopback HTTP
+  receiver, asserting the summary reaches the payload.
+
+### Notes
+
+- Code fences and inline code are stripped before summarizing, so a chatty
+  reply with a big patch still yields a readable one-liner.
+- The first user request per session is kept for the session's lifetime; the
+  last reply is reset at every turn start.
+
 ## [0.2.0] - 2026-11-12
 
 ### Added
