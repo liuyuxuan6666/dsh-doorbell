@@ -254,7 +254,7 @@ doorbell_send ─▶ templates.js（占位符替换）─▶ notify.js
 - Node `>=20`；
 - DSH `>=0.2.0-rc.1 <0.3.0-0`，已在 `0.2.2-rc.1` 上测试；
 - `cordis.patch.yml` 插入 `doorbell` 行；
-- 115 个测试，CI 覆盖 Node 20 / 22 / 24。
+- 116 个测试，CI 覆盖 Node 20 / 22 / 24。
 
 ## 开发
 

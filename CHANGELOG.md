@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.1] - 2026-11-20
+
+### Fixed
+
+- Activation no longer aborts with `cannot get property "tools" without inject`.
+  The plugin now declares `inject = ['tools']` and reads the registry through
+  `ctx.tools`. 0.4.0 reached for it without declaring the dependency, so the
+  whole plugin — including the four automatic notifications — stayed unloaded
+  after the restart, which looked like "the webhook stopped working".
+- A regression test pins the declaration.
+
 ## [0.4.0] - 2026-11-20
 
 ### Changed

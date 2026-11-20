@@ -281,7 +281,7 @@ server, no inbound commands, no session-log reads.
 - Node `>=20`.
 - DSH `>=0.2.0-rc.1 <0.3.0-0`; tested on `0.2.2-rc.1`.
 - `cordis.patch.yml` inserts the `doorbell` row.
-- 115 tests; CI covers Node 20 / 22 / 24.
+- 116 tests; CI covers Node 20 / 22 / 24.
 
 ## Development
 

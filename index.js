@@ -8,6 +8,10 @@ import { DEFAULT_TEMPLATE, describeTemplates, parseTemplates, renderTemplate, te
 
 export const name = 'dsh-doorbell'
 
+// The on-demand send tool needs the tool registry. The service must be
+// declared here: touching ctx.tools without inject throws at activation.
+export const inject = ['tools']
+
 export const Config = Schema.object({
   provider: Schema.string().default('feishu')
     .description('Notification provider: feishu, dingtalk, generic.'),
@@ -326,7 +330,7 @@ export function apply(ctx, config = {}) {
     }
   }
 
-  const tools = (typeof ctx?.get === 'function' ? ctx.get('tools') : undefined) ?? ctx?.tools
+  const tools = ctx?.tools
   if (settings.enableTool !== false && typeof tools?.register === 'function') {
     const tool = createSendTool()
     if (typeof ctx?.effect === 'function') {

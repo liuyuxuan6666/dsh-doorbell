@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { apply, resolveConfig } from '../index.js'
+import { apply, inject, resolveConfig } from '../index.js'
 
 const flush = () => new Promise((resolve) => setImmediate(resolve))
 
@@ -17,10 +17,11 @@ function harness(overrides = {}) {
     effect(factory) {
       return factory()
     },
-    get(name) {
-      return name === 'tools'
-        ? { register: (definition) => { tools.push(definition); return () => {} } }
-        : undefined
+    tools: {
+      register: (definition) => {
+        tools.push(definition)
+        return () => {}
+      },
     },
     logger: { warn: (line) => warnings.push(String(line)) },
   }
@@ -59,6 +60,12 @@ const ask = (text, header) => ({
 })
 const bodyOf = (request) => JSON.parse(request.init.body)
 const textOfRequest = (request) => bodyOf(request).content.text
+
+test('the plugin declares the tool registry it uses', () => {
+  // Touching ctx.tools without this declaration aborts activation, which is
+  // exactly how 0.4.0 shipped broken.
+  assert.deepEqual(inject, ['tools'])
+})
 
 test('resolveConfig keeps defaults and ignores undefined overrides', () => {
   const config = resolveConfig({ provider: undefined, quietHours: '22:00-08:00' })
