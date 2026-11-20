@@ -1,13 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  approvalDetail,
   baseName,
-  errorDetail,
   formatDuration,
   inQuietHours,
   parseQuietHours,
-  questionDetail,
   sessionInfo,
   shouldNotify,
 } from '../lib/events.js'
@@ -18,18 +15,23 @@ test('baseName handles POSIX and Windows paths', () => {
   assert.equal(baseName(''), '')
 })
 
-test('sessionInfo reads header fields and falls back to the cwd name', () => {
-  assert.deepEqual(
-    sessionInfo({
-      session: { header: { id: 's1', title: 'Turn 1', cwd: '/work/repo' } },
-    }),
-    { id: 's1', title: 'Turn 1', cwd: '/work/repo', isSubagent: false },
-  )
-  assert.equal(
-    sessionInfo({ session: { header: { id: 's2', cwd: 'C:\\work\\repo' } } }).title,
-    'repo',
-  )
-  assert.equal(sessionInfo(undefined).title, 'unknown session')
+test('sessionInfo reads header fields and names the workspace after the folder', () => {
+  const info = sessionInfo({
+    session: { header: { id: 's1', title: 'Turn 1', cwd: 'C:\\work\\system-administration' } },
+  })
+  assert.deepEqual(info, {
+    id: 's1',
+    title: 'Turn 1',
+    cwd: 'C:\\work\\system-administration',
+    workspace: 'system-administration',
+    isSubagent: false,
+  })
+})
+
+test('sessionInfo falls back to the title when there is no cwd', () => {
+  const info = sessionInfo({ session: { header: { id: 's2', title: 'repo' } } })
+  assert.equal(info.workspace, 'repo')
+  assert.equal(sessionInfo(undefined).workspace, 'unknown session')
 })
 
 test('sessionInfo detects known parent fields as subagents', () => {
@@ -45,6 +47,7 @@ test('formatDuration keeps notifications compact', () => {
   assert.equal(formatDuration(500), '500ms')
   assert.equal(formatDuration(12_400), '12s')
   assert.equal(formatDuration(64_000), '1m 4s')
+  assert.equal(formatDuration(173_000), '2m 53s')
   assert.equal(formatDuration(3_720_000), '1h 2m')
 })
 
@@ -94,12 +97,4 @@ test('shouldNotify filters short turns, subagents and quiet completion', () => {
     }),
     true,
   )
-})
-
-test('detail helpers keep only short, useful text', () => {
-  assert.equal(approvalDetail({ toolName: 'pwsh', reason: 'run tests' }), 'pwsh — run tests')
-  assert.equal(approvalDetail({ toolName: 'pwsh' }), 'pwsh 等待确认')
-  assert.equal(questionDetail({ questions: [{ question: '选 A 还是 B？' }] }), '选 A 还是 B？')
-  assert.match(errorDetail({ error: new Error('boom') }), /boom/)
-  assert.equal(questionDetail({}), '等待你回答问题')
 })

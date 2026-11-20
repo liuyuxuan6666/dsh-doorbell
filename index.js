@@ -1,15 +1,10 @@
 import Schema from '@deepseek-ai/schemastery'
 
-import {
-  approvalDetail,
-  errorDetail,
-  questionDetail,
-  sessionInfo,
-  shouldNotify,
-} from './lib/events.js'
+import { inQuietHours, sessionInfo, shouldNotify } from './lib/events.js'
 import { buildMessage } from './lib/format.js'
-import { buildSummary, textOf } from './lib/summary.js'
+import { buildSummary, headSummary, textOf } from './lib/summary.js'
 import { createNotifier } from './lib/notify.js'
+import { DEFAULT_TEMPLATE, describeTemplates, parseTemplates, renderTemplate, templateVars } from './lib/templates.js'
 
 export const name = 'dsh-doorbell'
 
@@ -42,6 +37,12 @@ export const Config = Schema.object({
     .description('Prefix for notification titles.'),
   requestTimeoutMs: Schema.number().default(5000)
     .description('Webhook request timeout in milliseconds.'),
+  enableTool: Schema.boolean().default(true)
+    .description('Expose doorbell_send so the agent can push a notification on demand.'),
+  manualMinIntervalMs: Schema.number().default(3000)
+    .description('Minimum gap between two doorbell_send calls in one session; 0 disables the limit.'),
+  templates: Schema.dict(Schema.string()).default({})
+    .description('Named message templates: key is what the agent picks, value is the text it sends.'),
 })
 
 const DEFAULTS = {
@@ -59,6 +60,9 @@ const DEFAULTS = {
   quietHours: '',
   titlePrefix: 'DSH',
   requestTimeoutMs: 5000,
+  enableTool: true,
+  manualMinIntervalMs: 3000,
+  templates: {},
 }
 
 const FLAGS = {
@@ -70,7 +74,7 @@ const FLAGS = {
 
 /** Merge defaults without letting an undefined config key erase one. */
 export function resolveConfig(config = {}) {
-  const settings = { ...DEFAULTS }
+  const settings = { ...DEFAULTS, templates: {} }
   for (const [key, value] of Object.entries(config ?? {})) {
     if (value !== undefined) settings[key] = value
   }
@@ -78,8 +82,7 @@ export function resolveConfig(config = {}) {
 }
 
 /**
- * Attach the four DSH listeners. Host-only: no client half, no tools, no
- * session writes.
+ * Attach the four DSH listeners and, when enabled, the on-demand send tool.
  *
  * @param {object} ctx DSH plugin context
  * @param {object} [config] validated plugin config
@@ -94,10 +97,11 @@ export function apply(ctx, config = {}) {
   })
   const startedAt = new Map()
   const errored = new Set()
-  // Last assistant reply and first user request per session, used to build the
-  // one-line summary without another model call.
-  const lastReply = new Map()
-  const firstAsk = new Map()
+  // The instruction that opened the current turn, per session. The summary is
+  // its head, so nothing here needs a model call.
+  const lastAsk = new Map()
+  // Last successful on-demand send, per session, for the rate limit.
+  const lastManualAt = new Map()
 
   // Prefer the durable session id: DSH may hand a fresh agent object to a
   // later event, while the session identity stays stable.
@@ -106,26 +110,15 @@ export function apply(ctx, config = {}) {
     return id || agent
   }
 
-  /**
-   * Remember the conversation text a notification will summarize. Reading the
-   * committed session log keeps this exact: the model has already produced
-   * these words, so nothing is invented.
-   */
+  /** Remember the user's own words; plugin-injected messages are not asks. */
   function remember(session, event) {
+    if (event?.type !== 'user/message') return
+    const source = event?.data?.source?.kind
+    if (typeof source === 'string' && source.startsWith('plugin')) return
     const id = String(session?.header?.id ?? session?.id ?? '')
     if (!id) return
-    const type = event?.type
-    if (type === 'assistant/message') {
-      const text = textOf(event?.data ?? event)
-      if (text.trim()) lastReply.set(id, text)
-      return
-    }
-    if (type === 'user/message' && !firstAsk.has(id)) {
-      const source = event?.data?.source?.kind
-      if (typeof source === 'string' && source.startsWith('plugin')) return
-      const text = textOf(event?.data ?? event)
-      if (text.trim()) firstAsk.set(id, text)
-    }
+    const text = textOf(event?.data ?? event)
+    if (text.trim()) lastAsk.set(id, text)
   }
 
   ctx.on('session/event', (session, event) => {
@@ -136,21 +129,17 @@ export function apply(ctx, config = {}) {
     }
   })
 
-  function ring(kind, agent, detail, durationMs) {
+  function ring(kind, agent, durationMs) {
     try {
       if (!settings[FLAGS[kind]]) return
       const session = sessionInfo(agent)
       const elapsedMs = Number.isFinite(durationMs) ? durationMs : 0
       if (!shouldNotify({ kind, session, elapsedMs, config: settings, now: new Date() })) return
-      const summary = buildSummary({
-        assistantText: lastReply.get(session.id),
-        userText: firstAsk.get(session.id),
-      })
+      const summary = buildSummary({ userText: lastAsk.get(session.id) })
       const message = buildMessage({
         kind,
         session,
         durationMs: kind === 'complete' ? elapsedMs : undefined,
-        detail,
         summary,
         prefix: settings.titlePrefix,
       })
@@ -166,8 +155,6 @@ export function apply(ctx, config = {}) {
     const key = sessionKey(agent)
     if (status === 'running') {
       startedAt.set(key, Date.now())
-      const id = sessionInfo(agent).id
-      if (id) lastReply.delete(id)
       return
     }
     if (status !== 'idle') return
@@ -180,35 +167,174 @@ export function apply(ctx, config = {}) {
       errored.delete(key)
       return
     }
-    ring('complete', agent, '', Date.now() - started)
+    ring('complete', agent, Date.now() - started)
   })
 
   ctx.on('agent/error', (event = {}) => {
     const agent = event.agent ?? event.data?.agent
     if (agent) errored.add(sessionKey(agent))
-    ring('error', agent, errorDetail(event))
+    ring('error', agent)
   })
 
   // Both are waterfalls: observe, then delegate to the real answerer.
   ctx.on('approval/request', (request, next) => {
-    ring('approval', request?.agent, approvalDetail(request))
+    ring('approval', request?.agent)
     return next()
   })
 
   ctx.on('user-questions/request', (request, next) => {
-    ring('question', request?.agent, questionDetail(request))
+    ring('question', request?.agent)
     return next()
   })
 
   ctx.on('agent/disposed', ({ agent } = {}) => {
     if (!agent) return
-    startedAt.delete(sessionKey(agent))
+    const key = sessionKey(agent)
+    startedAt.delete(key)
+    lastManualAt.delete(key)
     const id = sessionInfo(agent).id
-    if (id) {
-      lastReply.delete(id)
-      firstAsk.delete(id)
-    }
+    if (id) lastAsk.delete(id)
   })
+
+  /** Send one notification on the agent's instruction, never throwing. */
+  async function sendManual(args = {}, exec) {
+    const now = new Date()
+    const session = sessionInfo(exec?.agent)
+    const key = session.id || 'session'
+    if (inQuietHours(now, settings.quietHours)) {
+      return { ok: false, skipped: 'quiet-hours', text: '' }
+    }
+    const minInterval = Math.max(0, Number(settings.manualMinIntervalMs) || 0)
+    if (minInterval > 0 && now.getTime() - (lastManualAt.get(key) ?? 0) < minInterval) {
+      return { ok: false, skipped: 'rate-limited', text: '' }
+    }
+
+    const templates = parseTemplates(settings.templates)
+    const templateKey = String(args.template ?? '').trim()
+    const direct = String(args.text ?? '').trim()
+    const summary = String(args.summary ?? '').trim() || headSummary(lastAsk.get(session.id))
+    const extra = args.vars && typeof args.vars === 'object' ? args.vars : {}
+    const vars = templateVars({
+      kind: 'note',
+      session,
+      summary,
+      prefix: settings.titlePrefix,
+      now,
+      extra,
+    })
+
+    let text
+    if (direct) {
+      text = direct
+    } else if (templateKey) {
+      if (templates[templateKey] === undefined) {
+        return {
+          ok: false,
+          error: `没有名为 "${templateKey}" 的模板；可用：${Object.keys(templates).join(', ') || '无'}`,
+          text: '',
+        }
+      }
+      text = renderTemplate(templates[templateKey], vars)
+    } else {
+      text = renderTemplate(DEFAULT_TEMPLATE, vars)
+    }
+    if (!text) return { ok: false, error: '渲染结果为空', text: '' }
+
+    const result = await notifier.notify({
+      kind: 'note',
+      title: [settings.titlePrefix, '·', '通知'].filter(Boolean).join(' '),
+      text,
+    })
+    if (result?.ok) lastManualAt.set(key, now.getTime())
+    return {
+      ok: result?.ok !== false,
+      provider: notifier.provider,
+      text,
+      ...(result?.skipped ? { skipped: String(result.skipped) } : {}),
+      ...(result?.error ? { error: String(result.error) } : {}),
+    }
+  }
+
+  /** The on-demand send tool. Its description carries the template catalogue. */
+  function createSendTool() {
+    const templates = parseTemplates(settings.templates)
+    const keys = Object.keys(templates)
+    const properties = {
+      text: {
+        type: 'string',
+        description: '直接发送这段文本；给了它就忽略 template。',
+      },
+      summary: {
+        type: 'string',
+        description: '摘要行内容，默认取本回合指令的前 16 个有效字符。',
+      },
+      vars: {
+        type: 'object',
+        additionalProperties: { type: 'string' },
+        description: '填充模板里的 {name} 占位符；未提供的占位符原样保留。',
+      },
+      template: {
+        type: 'string',
+        description: '使用哪条已配置模板（key）。不传也没有 text 时用内置三行格式。',
+        ...(keys.length ? { enum: keys } : {}),
+      },
+    }
+
+    return {
+      name: 'doorbell_send',
+      description: [
+        '主动往你的飞书/钉钉群推一条短通知（不影响回合结束时自动发送的那条）。',
+        '用 template 选一条已配置模板，或直接给 text。',
+        '可用模板（key — 首行）：',
+        describeTemplates(templates),
+        '模板占位符：{prefix} {status} {duration} {workspace} {summary} {time}，以及 vars 里传入的任意键。',
+        '遵守静默时段；同一会话短时间重复调用会被限流。',
+      ].join('\n'),
+      parameters: { type: 'object', properties, required: [] },
+      output: {
+        schema: {
+          type: 'object',
+          properties: {
+            ok: { type: 'boolean' },
+            provider: { type: 'string' },
+            text: { type: 'string' },
+            skipped: { type: 'string' },
+            error: { type: 'string' },
+          },
+        },
+        render(_args, value) {
+          if (value?.ok) return [{ type: 'text', text: `已发送（${value.provider}）\n${value.text}` }]
+          if (value?.skipped) return [{ type: 'text', text: `未发送：${value.skipped}` }]
+          return [{ type: 'text', text: `未发送：${value?.error ?? 'unknown error'}` }]
+        },
+      },
+      presentCall: (args) => ({
+        card: 'generic',
+        title: `发送通知${args?.template ? `：${args.template}` : ''}`,
+        kind: 'other',
+        rawInput: args,
+      }),
+      async execute(args, exec) {
+        try {
+          return await sendManual(args ?? {}, exec)
+        } catch (error) {
+          const detail = String(error?.message ?? error).slice(0, 180)
+          logger?.warn?.(`[doorbell] on-demand send failed: ${detail}`)
+          return { ok: false, error: detail, text: '' }
+        }
+      },
+    }
+  }
+
+  const tools = (typeof ctx?.get === 'function' ? ctx.get('tools') : undefined) ?? ctx?.tools
+  if (settings.enableTool !== false && typeof tools?.register === 'function') {
+    const tool = createSendTool()
+    if (typeof ctx?.effect === 'function') {
+      ctx.effect(() => tools.register(tool), 'dsh-doorbell: send tool')
+    } else {
+      tools.register(tool)
+    }
+  }
 
   return { notifier }
 }

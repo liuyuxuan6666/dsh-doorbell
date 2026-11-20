@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.4.0] - 2026-11-20
+
+### Changed
+
+- **Fixed three-line message.** `DSH · 完成 2m 53s` puts status and elapsed time
+  on one line, the workspace directory name follows, and `摘要：…` closes the
+  message. The `会话：` / `工作区：` / `耗时：` labels are gone.
+- **The summary is now the head of your instruction.** Every notification
+  summarizes the first 16 meaningful characters of the user's own message
+  (whitespace collapsed, Markdown decoration stripped, punctuation kept, `…`
+  when truncated) instead of the assistant's first sentence. Messages injected
+  by other plugins are ignored, so an automatic continuation never becomes the
+  summary.
+
+### Removed
+
+- Per-event detail lines: error text, tool names and question texts no longer
+  appear in notifications.
+
+### Added
+
+- **`doorbell_send` tool** (`enableTool`, default on): the agent can push a
+  message mid-turn. The result is structured — `ok`, `provider`, `text`, and
+  `skipped` / `error` when it did not go out.
+- **Named templates** (`templates`): a `key → text` map with `{prefix}`,
+  `{status}`, `{duration}`, `{workspace}`, `{summary}`, `{time}` and any `vars`
+  key. Unknown placeholders stay visible. The tool description lists every key
+  with the first line of its text so the agent can pick one.
+- On-demand sends honour quiet hours and a per-session rate limit
+  (`manualMinIntervalMs`, default 3s). Automatic notifications are unaffected by
+  templates or by any on-demand call.
+- `lib/templates.js` for template parsing and placeholder substitution.
+
+### Tests
+
+- 115 tests (was 42), including the tool registration, template rendering, the
+  rate limit and quiet-hours refusal.
+
 ## [0.3.0] - 2026-11-14
 
 ### Added
@@ -38,9 +76,3 @@
 - Minimum turn duration, subagent filtering, quiet hours and HTTPS/loopback
   webhook validation.
 - Unit and integration tests using a fake `fetch`; no network required.
-
-### Notes
-
-- DingTalk and Feishu interactive cards are planned for later releases.
-- Approval and `user-questions/request` listeners are observe-only waterfalls
-  and always delegate with `next()`.

@@ -53,7 +53,7 @@ function agentFor(session) {
   return { session: { header: session } }
 }
 
-test('a completed turn carries the session name and a one-line summary', async () => {
+test('a completed turn sends three lines with the instruction head as summary', async () => {
   const sink = await receiver()
   const { emit } = harness({
     provider: 'generic',
@@ -64,43 +64,45 @@ test('a completed turn carries the session name and a one-line summary', async (
   const agent = agentFor(session)
 
   emit('agent/status', { agent, status: 'running' })
-  emit('session/event', { header: session }, { type: 'user/message', data: { content: [{ type: 'text', text: '帮我改一下面板样式' }] } })
+  emit('session/event', { header: session }, {
+    type: 'user/message',
+    data: { content: [{ type: 'text', text: '帮我改一下面板样式，顺便把通知也换成三行格式' }] },
+  })
   emit('session/event', { header: session }, {
     type: 'assistant/message',
-    data: {
-      content: [
-        { type: 'text', text: '面板已按宿主既有风格重排。\n\n细节：内边距 20/22，只用主题 token。' },
-        { type: 'tool-call', id: 'x' },
-      ],
-    },
+    data: { content: [{ type: 'text', text: '面板已按宿主既有风格重排。' }, { type: 'tool-call', id: 'x' }] },
   })
   emit('agent/status', { agent, status: 'idle' })
 
-  await new Promise((resolve) => setTimeout(resolve, 60))
+  await new Promise((resolve) => setTimeout(resolve, 80))
   await sink.close()
 
   assert.equal(sink.bodies.length, 1, 'exactly one notification')
   const payload = JSON.parse(sink.bodies[0])
-  assert.match(payload.text, /会话：dsh-tally 设计/)
-  assert.match(payload.text, /摘要：面板已按宿主既有风格重排。/)
-  assert.doesNotMatch(payload.text, /细节：/)
+  const lines = payload.text.split('\n')
+  assert.equal(lines.length, 3)
+  assert.match(lines[0], /^DSH · 完成( \d+m?s)?$/)
+  assert.equal(lines[1], 'dsh-tally')
+  assert.equal(lines[2], '摘要：帮我改一下面板样式，顺便把通知也…')
 })
 
-test('an approval before any reply falls back to the user request', async () => {
+test('an approval before any reply summarizes the user request', async () => {
   const sink = await receiver()
   const { emit } = harness({ provider: 'generic', webhookUrl: sink.url, minTurnDurationMs: 0 })
   const session = { id: 'session-2', title: '部署', cwd: '/tmp/deploy' }
   const agent = agentFor(session)
 
-  emit('session/event', { header: session }, { type: 'user/message', data: { content: [{ type: 'text', text: '把服务重新部署一下' }] } })
+  emit('session/event', { header: session }, {
+    type: 'user/message',
+    data: { content: [{ type: 'text', text: '把服务重新部署一下' }] },
+  })
   emit('agent/status', { agent, status: 'running' })
   emit('approval/request', { agent, toolName: 'pwsh', reason: '运行 bash 脚本' }, () => Promise.resolve({ kind: 'allow' }))
 
-  await new Promise((resolve) => setTimeout(resolve, 60))
+  await new Promise((resolve) => setTimeout(resolve, 80))
   await sink.close()
 
   assert.equal(sink.bodies.length, 1)
   const payload = JSON.parse(sink.bodies[0])
-  assert.match(payload.text, /摘要：把服务重新部署一下/)
-  assert.match(payload.text, /pwsh/)
+  assert.equal(payload.text, 'DSH · 等待确认\ndeploy\n摘要：把服务重新部署一下')
 })
