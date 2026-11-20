@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2] - 2026-11-20
+
+### Changed
+
+- **The summary is exactly your own message.** DSH stores injected material as
+  `user/message` events too — plugin preludes such as `envoy-link-routing` and
+  `<system-reminder>` runtime context — each with its own `source.kind`. Only
+  `kind: "user"` is your text, so plugin preludes no longer leak into the
+  summary and no longer need to be guessed at.
+- **20 characters instead of 16**, and no Markdown rewriting: whitespace is
+  collapsed to one line and the first 20 code points are kept (plus `…`).
+- New `summaryChars` config (default 20) so the length needs no code change.
+
 ## [0.4.1] - 2026-11-20
 
 ### Fixed

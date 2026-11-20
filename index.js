@@ -2,7 +2,7 @@ import Schema from '@deepseek-ai/schemastery'
 
 import { inQuietHours, sessionInfo, shouldNotify } from './lib/events.js'
 import { buildMessage } from './lib/format.js'
-import { buildSummary, headSummary, textOf } from './lib/summary.js'
+import { buildSummary, headSummary, isHumanAsk, textOf } from './lib/summary.js'
 import { createNotifier } from './lib/notify.js'
 import { DEFAULT_TEMPLATE, describeTemplates, parseTemplates, renderTemplate, templateVars } from './lib/templates.js'
 
@@ -43,6 +43,8 @@ export const Config = Schema.object({
     .description('Webhook request timeout in milliseconds.'),
   enableTool: Schema.boolean().default(true)
     .description('Expose doorbell_send so the agent can push a notification on demand.'),
+  summaryChars: Schema.number().default(20)
+    .description('How many characters of your own message the summary keeps.'),
   manualMinIntervalMs: Schema.number().default(3000)
     .description('Minimum gap between two doorbell_send calls in one session; 0 disables the limit.'),
   templates: Schema.dict(Schema.string()).default({})
@@ -65,6 +67,7 @@ const DEFAULTS = {
   titlePrefix: 'DSH',
   requestTimeoutMs: 5000,
   enableTool: true,
+  summaryChars: 20,
   manualMinIntervalMs: 3000,
   templates: {},
 }
@@ -114,11 +117,10 @@ export function apply(ctx, config = {}) {
     return id || agent
   }
 
-  /** Remember the user's own words; plugin-injected messages are not asks. */
+  /** Remember the human's own words; injected preludes and context never count. */
   function remember(session, event) {
     if (event?.type !== 'user/message') return
-    const source = event?.data?.source?.kind
-    if (typeof source === 'string' && source.startsWith('plugin')) return
+    if (!isHumanAsk(event)) return
     const id = String(session?.header?.id ?? session?.id ?? '')
     if (!id) return
     const text = textOf(event?.data ?? event)
@@ -139,7 +141,10 @@ export function apply(ctx, config = {}) {
       const session = sessionInfo(agent)
       const elapsedMs = Number.isFinite(durationMs) ? durationMs : 0
       if (!shouldNotify({ kind, session, elapsedMs, config: settings, now: new Date() })) return
-      const summary = buildSummary({ userText: lastAsk.get(session.id) })
+      const summary = buildSummary({
+        userText: lastAsk.get(session.id),
+        limit: settings.summaryChars,
+      })
       const message = buildMessage({
         kind,
         session,
@@ -216,7 +221,8 @@ export function apply(ctx, config = {}) {
     const templates = parseTemplates(settings.templates)
     const templateKey = String(args.template ?? '').trim()
     const direct = String(args.text ?? '').trim()
-    const summary = String(args.summary ?? '').trim() || headSummary(lastAsk.get(session.id))
+    const summary = String(args.summary ?? '').trim() ||
+      headSummary(lastAsk.get(session.id), settings.summaryChars)
     const extra = args.vars && typeof args.vars === 'object' ? args.vars : {}
     const vars = templateVars({
       kind: 'note',
@@ -270,7 +276,7 @@ export function apply(ctx, config = {}) {
       },
       summary: {
         type: 'string',
-        description: '摘要行内容，默认取本回合指令的前 16 个有效字符。',
+        description: '摘要行内容，默认取你这条指令的开头（summaryChars 个字）。',
       },
       vars: {
         type: 'object',

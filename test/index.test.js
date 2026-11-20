@@ -56,7 +56,7 @@ const sessionOf = (a) => ({ header: a.session.header })
 const ask = (text, header) => ({
   type: 'user/message',
   header,
-  data: { content: [{ type: 'text', text }] },
+  data: { source: { kind: 'user' }, content: [{ type: 'text', text }] },
 })
 const bodyOf = (request) => JSON.parse(request.init.body)
 const textOfRequest = (request) => bodyOf(request).content.text
@@ -80,7 +80,7 @@ test('a completed turn sends the three-line message', async () => {
   const a = agent()
   const header = sessionOf(a)
   h.handlers.get('agent/status')({ agent: a, status: 'running' })
-  h.handlers.get('session/event')(header, ask('把这条通知改成三行，摘要取我指令前十六个字', header))
+  h.handlers.get('session/event')(header, ask('把这条通知改成三行，摘要取我本人指令的前二十个字', header))
   h.handlers.get('agent/status')({ agent: a, status: 'idle' })
   await flush()
 
@@ -89,7 +89,7 @@ test('a completed turn sends the three-line message', async () => {
   assert.equal(lines.length, 3)
   assert.match(lines[0], /^DSH · 完成( \d+m?s)?$/)
   assert.equal(lines[1], 'system-administration')
-  assert.equal(lines[2], '摘要：把这条通知改成三行，摘要取我指令…')
+  assert.equal(lines[2], '摘要：把这条通知改成三行，摘要取我本人指令的前…')
 })
 
 test('short turns are skipped', async () => {
@@ -189,20 +189,45 @@ test('a missing webhook degrades without throwing', async () => {
   assert.match(h.warnings.join('\n'), /webhook is not configured/)
 })
 
-test('plugin-injected messages never become the summary', async () => {
+test('injected user messages never become the summary', async () => {
   const h = harness()
   const a = agent()
   const header = sessionOf(a)
-  h.handlers.get('session/event')(header, ask('真正的指令', header))
+  // A plugin prelude and the runtime context both arrive as user/message.
   h.handlers.get('session/event')(header, {
     type: 'user/message',
     header,
-    data: { source: { kind: 'plugin.goal' }, content: [{ type: 'text', text: '自动续跑注入' }] },
+    data: {
+      source: { kind: 'envoy-link-routing' },
+      content: [{ type: 'text', text: '[envoy-link-routing]\n\n本轮用户消息包含公网链接：' }],
+    },
   })
+  h.handlers.get('session/event')(header, {
+    type: 'user/message',
+    header,
+    data: {
+      source: { kind: 'runtime-context', form: 'snapshot' },
+      content: [{ type: 'text', text: '<system-reminder>Current working directory: ...</system-reminder>' }],
+    },
+  })
+  h.handlers.get('session/event')(header, ask('真正的指令', header))
   h.handlers.get('agent/status')({ agent: a, status: 'running' })
   h.handlers.get('agent/status')({ agent: a, status: 'idle' })
   await flush()
-  assert.match(textOfRequest(h.requests[0]), /摘要：真正的指令/)
+  const text = textOfRequest(h.requests[0])
+  assert.match(text, /摘要：真正的指令/)
+  assert.doesNotMatch(text, /envoy-link-routing|system-reminder/)
+})
+
+test('summaryChars changes how much of the message is shown', async () => {
+  const h = harness({ summaryChars: 5 })
+  const a = agent()
+  const header = sessionOf(a)
+  h.handlers.get('session/event')(header, ask('把这条通知改成三行', header))
+  h.handlers.get('agent/status')({ agent: a, status: 'running' })
+  h.handlers.get('agent/status')({ agent: a, status: 'idle' })
+  await flush()
+  assert.match(textOfRequest(h.requests[0]), /摘要：把这条通知…/)
 })
 
 test('the send tool is registered with the template catalogue', () => {

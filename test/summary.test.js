@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSummary, headSummary, normalizeInstruction, textOf } from '../lib/summary.js'
+import {
+  buildSummary,
+  headSummary,
+  isHumanAsk,
+  normalizeUserText,
+  textOf,
+} from '../lib/summary.js'
 
 test('textOf joins text blocks and ignores everything else', () => {
   assert.equal(
@@ -12,32 +18,42 @@ test('textOf joins text blocks and ignores everything else', () => {
   assert.equal(textOf(undefined), '')
 })
 
-test('normalizeInstruction drops markdown decoration but keeps punctuation', () => {
-  assert.equal(normalizeInstruction('  ## 标题\n\n- 第一条'), '标题 第一条')
-  assert.equal(normalizeInstruction('**加粗** 和 ~~删除~~'), '加粗 和 删除')
-  assert.equal(normalizeInstruction('看 [文档](https://x.y) 这里'), '看 文档 这里')
-  assert.equal(normalizeInstruction('`npm test` 报错了吗？'), 'npm test 报错了吗？')
-  assert.equal(normalizeInstruction('```js\nconst a = 1\n```\n摘要在这里'), '摘要在这里')
-  assert.equal(normalizeInstruction('1. 第一步\n2. 第二步'), '第一步 第二步')
-  assert.equal(normalizeInstruction('   '), '')
+test('isHumanAsk accepts only the composer, not injected context', () => {
+  assert.equal(isHumanAsk({ data: { source: { kind: 'user' } } }), true)
+  assert.equal(isHumanAsk({ data: { source: { kind: 'runtime-context', form: 'snapshot' } } }), false)
+  assert.equal(isHumanAsk({ data: { source: { kind: 'envoy-link-routing' } } }), false)
+  assert.equal(isHumanAsk({ data: { source: { kind: 'plugin.goal' } } }), false)
+  // Hosts without a source field are trusted, as before.
+  assert.equal(isHumanAsk({ data: {} }), true)
+  assert.equal(isHumanAsk({}), true)
 })
 
-test('headSummary keeps 16 characters and marks a truncation', () => {
-  assert.equal(headSummary('把这条通知改成三行，摘要取指令前十六个字'), '把这条通知改成三行，摘要取指令前…')
+test('normalizeUserText keeps the words and collapses whitespace', () => {
+  assert.equal(normalizeUserText('  第一行\n\n第二行  '), '第一行 第二行')
+  assert.equal(normalizeUserText('`npm test` 报错了吗？'), '`npm test` 报错了吗？')
+  assert.equal(normalizeUserText('   '), '')
+})
+
+test('headSummary keeps 20 characters and marks a truncation', () => {
+  assert.equal(
+    headSummary('把这条通知改成三行，摘要取我本人指令的前二十个字'),
+    '把这条通知改成三行，摘要取我本人指令的前…',
+  )
   assert.equal(headSummary('帮我改一下面板样式'), '帮我改一下面板样式')
   assert.equal(headSummary(''), '')
   assert.equal(headSummary(undefined), '')
 })
 
-test('headSummary counts code points, never half a character', () => {
-  const emoji = '😀'.repeat(20)
-  const out = headSummary(emoji, 16)
-  assert.equal(Array.from(out).length, 17)
+test('headSummary honours a custom limit and counts code points', () => {
+  assert.equal(headSummary('把这条通知改成三行', 5), '把这条通知…')
+  const emoji = '😀'.repeat(30)
+  const out = headSummary(emoji, 20)
+  assert.equal(Array.from(out).length, 21)
   assert.ok(out.endsWith('…'))
 })
 
-test('buildSummary is the instruction head', () => {
+test('buildSummary is the head of the user text', () => {
   assert.equal(buildSummary({ userText: '帮我部署一下这个仓库' }), '帮我部署一下这个仓库')
   assert.equal(buildSummary({}), '')
-  assert.equal(buildSummary({ userText: '一'.repeat(40) }).length, 17)
+  assert.equal(buildSummary({ userText: '一'.repeat(40) }).length, 21)
 })

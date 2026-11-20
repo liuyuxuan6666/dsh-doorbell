@@ -66,7 +66,10 @@ test('a completed turn sends three lines with the instruction head as summary', 
   emit('agent/status', { agent, status: 'running' })
   emit('session/event', { header: session }, {
     type: 'user/message',
-    data: { content: [{ type: 'text', text: '帮我改一下面板样式，顺便把通知也换成三行格式' }] },
+    data: {
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: '帮我改一下面板样式，顺便把通知也换成三行格式' }],
+    },
   })
   emit('session/event', { header: session }, {
     type: 'assistant/message',
@@ -83,7 +86,7 @@ test('a completed turn sends three lines with the instruction head as summary', 
   assert.equal(lines.length, 3)
   assert.match(lines[0], /^DSH · 完成( \d+m?s)?$/)
   assert.equal(lines[1], 'dsh-tally')
-  assert.equal(lines[2], '摘要：帮我改一下面板样式，顺便把通知也…')
+  assert.equal(lines[2], '摘要：帮我改一下面板样式，顺便把通知也换成三行…')
 })
 
 test('an approval before any reply summarizes the user request', async () => {
@@ -94,7 +97,7 @@ test('an approval before any reply summarizes the user request', async () => {
 
   emit('session/event', { header: session }, {
     type: 'user/message',
-    data: { content: [{ type: 'text', text: '把服务重新部署一下' }] },
+    data: { source: { kind: 'user' }, content: [{ type: 'text', text: '把服务重新部署一下' }] },
   })
   emit('agent/status', { agent, status: 'running' })
   emit('approval/request', { agent, toolName: 'pwsh', reason: '运行 bash 脚本' }, () => Promise.resolve({ kind: 'allow' }))

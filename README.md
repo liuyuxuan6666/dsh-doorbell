@@ -32,15 +32,16 @@ message to a chat group. No client UI, no inbound commands, no session writes.
 ```text
 DSH · 完成 2m 53s
 system-administration
-摘要：把这条通知改成三行…
+摘要：我知道怎么表述有效字符了，指的是去掉系统…
 ```
 
 ## Features
 
 - **One fixed three-line message.** Status and elapsed time share line one, the
   workspace sits on line two, the head of your instruction closes it.
-- **A summary you can predict.** The first 16 meaningful characters of the
-  instruction you sent, with `…` when it was longer. No model call, no latency.
+- **A summary you can predict.** The opening of the message *you* typed —
+  injected plugin and runtime context is ignored — 20 characters, with `…` when
+  it was longer. No model call, no latency.
 - **Four events:** turn complete, turn failed, tool approval, and
   `ask_user_question` waiting for an answer.
 - **On demand too:** the `doorbell_send` tool lets the agent push a message
@@ -106,14 +107,14 @@ used the on-demand tool during the turn:
 ```text
 DSH · 完成 2m 53s
 system-administration
-摘要：把这条通知改成三行…
+摘要：我知道怎么表述有效字符了，指的是去掉系统…
 ```
 
 | Line | Content | Notes |
 |---|---|---|
 | 1 | `{prefix} · {status} {duration}` | Duration only exists on completion |
 | 2 | Workspace | Last path component of the session `cwd`, else the session title |
-| 3 | `摘要：…` | First 16 meaningful characters of your instruction |
+| 3 | `摘要：…` | First 20 characters of your own message |
 
 Errors, approvals and questions use the same shape. They carry no duration and
 **no error text, tool name or question text**: the workspace and what you asked
@@ -121,10 +122,15 @@ for are enough to decide whether to come back.
 
 ### What counts as a meaningful character
 
-Whitespace is collapsed, Markdown decoration is stripped (code fences, inline
-backticks, `#` headings, list markers, `**bold**`, link targets), then the first
-16 characters are kept. Punctuation counts — `这行对吗？` is not `这行对吗` — and
-emoji are counted as one character so they are never cut in half.
+Only the message *you* sent counts. DSH stores injected material as
+`user/message` events too — plugin preludes (for example `envoy-link-routing`)
+and `<system-reminder>` runtime context — each with its own `source.kind`; only
+your own message carries `kind: "user"`, and everything else is ignored.
+
+Your text is then collapsed to a single line and cut at 20 characters, with `…`
+when it was longer. Nothing else is rewritten: what you typed is what you see.
+Punctuation counts, and emoji are counted as one character so they are never cut
+in half. Adjust the length with `summaryChars`.
 
 ## On demand
 
@@ -137,7 +143,7 @@ the first line of its text, so the agent can pick one.
 | `template` | Template key to render. Without it and without `text`, the built-in three lines (status `通知`) are used |
 | `text` | Send this text verbatim; wins over `template` |
 | `vars` | Values for the template placeholders |
-| `summary` | Summary line content; defaults to the 16-character head of your instruction |
+| `summary` | Summary line content; defaults to the 20-character head of your own message |
 
 The result is structured: `{ ok, provider, text, skipped?, error? }`. Quiet
 hours (`quiet-hours`), the rate limit (`rate-limited`) and a missing webhook
@@ -221,6 +227,7 @@ only observe and always call `next()`.
         titlePrefix: DSH
         requestTimeoutMs: 5000
         enableTool: true
+        summaryChars: 20
         manualMinIntervalMs: 3000
         templates: {}
 ```
@@ -242,6 +249,7 @@ only observe and always call `next()`.
 | `titlePrefix` | `DSH` | Title prefix |
 | `requestTimeoutMs` | `5000` | Webhook timeout |
 | `enableTool` | `true` | Register the `doorbell_send` tool |
+| `summaryChars` | `20` | Characters of your own message kept in the summary |
 | `manualMinIntervalMs` | `3000` | Minimum gap between on-demand sends per session; `0` disables it |
 | `templates` | `{}` | Named templates: the key is what the agent picks |
 
@@ -281,7 +289,7 @@ server, no inbound commands, no session-log reads.
 - Node `>=20`.
 - DSH `>=0.2.0-rc.1 <0.3.0-0`; tested on `0.2.2-rc.1`.
 - `cordis.patch.yml` inserts the `doorbell` row.
-- 116 tests; CI covers Node 20 / 22 / 24.
+- 118 tests; CI covers Node 20 / 22 / 24.
 
 ## Development
 
@@ -298,7 +306,7 @@ webhook required.
 
 - [x] Feishu text notifications
 - [x] DingTalk text notifications
-- [x] Fixed three-line format with a 16-character instruction summary
+- [x] Fixed three-line format with a 20-character summary of your own message
 - [x] `doorbell_send` on-demand sends and named templates
 - [ ] Feishu / DingTalk interactive cards
 - [ ] Retry, rate limiting, notification coalescing
